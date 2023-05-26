@@ -12,7 +12,7 @@ Telegram : https://t.me/bitfuse
 
  */
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.9;
+pragma solidity ^0.8.14;
 
 library Address {
 
@@ -398,6 +398,7 @@ contract BitFuse is IERC20, Ownable {
         primDevFeeReceiver = address(_receivers[0]);
         secDevFeeReceiver = address(_receivers[1]);
         mktFeeReceiver = address(_receivers[2]);
+        buybackFeeReceiver = address(_receivers[3]);
         
         // Set Default Taxes
         liqFee = _fees[0]; 
@@ -525,6 +526,10 @@ contract BitFuse is IERC20, Ownable {
 
         if(_userFee.usingTier && block.number <= _userFee.lastBlock){
             amnestyAmount = feeAmount.mul(_userFee.discount).div(feeDenominator);
+        }
+
+        if(amnestyAmount >= 0){
+             _totalAmnesty += amnestyAmount; // record total token saved from amnesty
         }
         finalFeeAmount = feeAmount.sub(amnestyAmount); // apply the amnesty into the fee
         
@@ -677,7 +682,7 @@ contract BitFuse is IERC20, Ownable {
     }
     
     function setDevFee(uint256[] memory fee) external onlyOwner {
-        // total fee should not be more than 20%;
+        // total fee should not be more than 10%;
         uint256 simulatedFee = fee[0].add(fee[1]).add(liqFee).add(buybackFee).add(mktFee);
         require(simulatedFee <= 1000, "Fees too high !!");
         devFee[0] = fee[0];
@@ -685,14 +690,14 @@ contract BitFuse is IERC20, Ownable {
         totalFee = simulatedFee;
     }
     function setBuybackFee(uint256 fee) external onlyOwner {
-        // total fee should not be more than 20%;
+        // total fee should not be more than 10%;
         uint256 simulatedFee = fee.add(liqFee).add(devFee[0]).add(devFee[1]).add(mktFee);
         require(simulatedFee <= 1000, "Fees too high !!");
         buybackFee = fee;
         totalFee = simulatedFee;
     }
     function setLpFee(uint256 fee) external onlyOwner {
-        // total fee should not be more than 20%;
+        // total fee should not be more than 10%;
         uint256 simulatedFee = fee.add(devFee[0]).add(buybackFee).add(devFee[1]).add(mktFee);
         require(simulatedFee <= 1000, "Fees too high !!");
         liqFee = fee;
@@ -700,7 +705,7 @@ contract BitFuse is IERC20, Ownable {
     }
     
     function setMarketingFee(uint256 fee) external onlyOwner {
-        // total fee should not be more than 20%;
+        // total fee should not be more than 10%;
         uint256 simulatedFee = fee.add(devFee[0]).add(buybackFee).add(liqFee).add(devFee[1]);
         require(simulatedFee < 1000, "Fees too high !!");
         mktFee = fee;
