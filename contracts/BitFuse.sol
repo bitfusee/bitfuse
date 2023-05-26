@@ -331,6 +331,7 @@ contract BitFuse is IERC20, Ownable {
     mapping (address => UserTier) _userTier;
     uint256 public _totalBurnFromTier;
     uint256 public _totalAmnesty;
+    uint public _totalSubscriber;
 
     // Name, Symbol, and Decimals Initialization
     string constant _name = "BitFuse";
@@ -503,10 +504,34 @@ contract BitFuse is IERC20, Ownable {
 
     function takeFee(address sender, address receiver, uint256 amount) internal returns (uint256) {
         uint256 feeAmount = amount.mul(getTotalFee(receiver == pair)).div(feeDenominator);
-        _balances[address(this)] = _balances[address(this)].add(feeAmount);
-        emit Transfer(sender, address(this), feeAmount);
+        uint256 amnestyAmount;
+        uint256 finalFeeAmount;
+        UserTier memory _userFee;
+        bool isBuy = sender == pair || sender == address(router);
+        bool isSell = receiver== pair || receiver == address(router);
+        bool isNormalTransfer = sender != pair && sender != address(router) && receiver != pair && receiver != address(router);
 
-        return amount.sub(feeAmount);
+        // check wether the sender are subscribe for amnesty or not
+        if(isBuy){
+            // when buy, then the user are receiver
+            _userFee = _userTier[receiver];        
+        }else if(isSell){
+            // when sell, then the user are sender
+            _userFee = _userTier[sender];
+        }else if(isNormalTransfer){
+            // if its normal transfer, we take consideration from sender perspective
+            _userFee = _userTier[sender];
+        }
+
+        if(_userFee.usingTier && block.number <= _userFee.lastBlock){
+            amnestyAmount = feeAmount.mul(_userFee.discount).div(feeDenominator);
+        }
+        finalFeeAmount = feeAmount.sub(amnestyAmount); // apply the amnesty into the fee
+        
+        _balances[address(this)] = _balances[address(this)].add(finalFeeAmount);
+        emit Transfer(sender, address(this), finalFeeAmount);
+
+        return amount.sub(finalFeeAmount);
     }
     
     function shouldSwapBack() internal view returns (bool) {
@@ -632,12 +657,17 @@ contract BitFuse is IERC20, Ownable {
         uint256 _costToSubscribe = _selectedTier.cost;
         uint256 balance = balanceOf(_msgSender());
         require(balance >= _costToSubscribe, "INS: Insufficient Balance");
+        require(_selectedTier.active,"INACTIVE: The Tier is not active");
         
         _transferFrom(_msgSender(), DEAD, _costToSubscribe); // the cost are burn to dead wallet
         
         // then, we increment
         _totalBurnFromTier += _costToSubscribe;
-        
+        // now check wether the user has been subscribed before or not
+        if(!_userTier[_msgSender()].usingTier){
+            // means that the user never pay for subscription before
+            _totalSubscriber += 1;
+        }
         _userTier[_msgSender()] = UserTier(
             true,
             (block.number).add(_selectedTier.blocks),
@@ -649,7 +679,7 @@ contract BitFuse is IERC20, Ownable {
     function setDevFee(uint256[] memory fee) external onlyOwner {
         // total fee should not be more than 20%;
         uint256 simulatedFee = fee[0].add(fee[1]).add(liqFee).add(buybackFee).add(mktFee);
-        require(simulatedFee <= 2000, "Fees too high !!");
+        require(simulatedFee <= 1000, "Fees too high !!");
         devFee[0] = fee[0];
         devFee[1] = fee[1];
         totalFee = simulatedFee;
@@ -657,14 +687,14 @@ contract BitFuse is IERC20, Ownable {
     function setBuybackFee(uint256 fee) external onlyOwner {
         // total fee should not be more than 20%;
         uint256 simulatedFee = fee.add(liqFee).add(devFee[0]).add(devFee[1]).add(mktFee);
-        require(simulatedFee <= 2000, "Fees too high !!");
+        require(simulatedFee <= 1000, "Fees too high !!");
         buybackFee = fee;
         totalFee = simulatedFee;
     }
     function setLpFee(uint256 fee) external onlyOwner {
         // total fee should not be more than 20%;
         uint256 simulatedFee = fee.add(devFee[0]).add(buybackFee).add(devFee[1]).add(mktFee);
-        require(simulatedFee <= 2000, "Fees too high !!");
+        require(simulatedFee <= 1000, "Fees too high !!");
         liqFee = fee;
         totalFee = simulatedFee;
     }
@@ -672,7 +702,7 @@ contract BitFuse is IERC20, Ownable {
     function setMarketingFee(uint256 fee) external onlyOwner {
         // total fee should not be more than 20%;
         uint256 simulatedFee = fee.add(devFee[0]).add(buybackFee).add(liqFee).add(devFee[1]);
-        require(simulatedFee < 2000, "Fees too high !!");
+        require(simulatedFee < 1000, "Fees too high !!");
         mktFee = fee;
         totalFee = simulatedFee;
     }
