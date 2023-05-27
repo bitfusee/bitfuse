@@ -1,67 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.14;
 
-library Address {
-
-    function isContract(address account) internal view returns (bool) {
-        // According to EIP-1052, 0x0 is the value returned for not-yet created accounts
-        // and 0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470 is returned
-        // for accounts without code, i.e. `keccak256('')`
-        bytes32 codehash;
-        bytes32 accountHash = 0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470;
-        // solhint-disable-next-line no-inline-assembly
-        assembly { codehash := extcodehash(account) }
-        return (codehash != accountHash && codehash != 0x0);
-    }
-
-    function sendValue(address payable recipient, uint256 amount) internal {
-        require(address(this).balance >= amount, "Address: insufficient balance");
-
-        // solhint-disable-next-line avoid-low-level-calls, avoid-call-value
-        (bool success, ) = recipient.call{ value: amount }("");
-        require(success, "Address: unable to send value, recipient may have reverted");
-    }
-
-    function functionCall(address target, bytes memory data) internal returns (bytes memory) {
-      return functionCall(target, data, "Address: low-level call failed");
-    }
-
-    function functionCall(address target, bytes memory data, string memory errorMessage) internal returns (bytes memory) {
-        return _functionCallWithValue(target, data, 0, errorMessage);
-    }
-
-    function functionCallWithValue(address target, bytes memory data, uint256 value) internal returns (bytes memory) {
-        return functionCallWithValue(target, data, value, "Address: low-level call with value failed");
-    }
-
-    function functionCallWithValue(address target, bytes memory data, uint256 value, string memory errorMessage) internal returns (bytes memory) {
-        require(address(this).balance >= value, "Address: insufficient balance for call");
-        return _functionCallWithValue(target, data, value, errorMessage);
-    }
-
-    function _functionCallWithValue(address target, bytes memory data, uint256 weiValue, string memory errorMessage) private returns (bytes memory) {
-        require(isContract(target), "Address: call to non-contract");
-
-        // solhint-disable-next-line avoid-low-level-calls
-        (bool success, bytes memory returndata) = target.call{ value: weiValue }(data);
-        if (success) {
-            return returndata;
-        } else {
-            // Look for revert reason and bubble it up if present
-            if (returndata.length > 0) {
-                // The easiest way to bubble the revert reason is using memory via assembly
-
-                // solhint-disable-next-line no-inline-assembly
-                assembly {
-                    let returndata_size := mload(returndata)
-                    revert(add(32, returndata), returndata_size)
-                }
-            } else {
-                revert(errorMessage);
-            }
-        }
-    }
-}
 
 abstract contract Context {
     function _msgSender() internal view returns (address payable) {
@@ -292,7 +231,7 @@ interface IDEXFactory {
  * Main Contract Starts Here 
  */
 
-contract TESTBFONE is IERC20, Ownable {
+contract TestBFTwo is IERC20, Ownable {
     using SafeMath for uint256;
     
     // About Amnesty
@@ -321,8 +260,8 @@ contract TESTBFONE is IERC20, Ownable {
     uint public _totalSubscriber;
 
     // Name, Symbol, and Decimals Initialization
-    string constant _name = "TESTBFONE";
-    string constant _symbol = "TESTBFONE";
+    string constant _name = "TestBFTwo";
+    string constant _symbol = "TestBFTwo";
     uint8 constant _decimals = 18;
     
     // Important Addresses
@@ -331,7 +270,7 @@ contract TESTBFONE is IERC20, Ownable {
     address WBNB = 0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c;
     
     // Supply
-    uint256 _totalSupply = 1000000000 * (10 ** _decimals); // 1,000,000,000 TESTBFONE
+    uint256 _totalSupply = 1000000000 * (10 ** _decimals); // 1,000,000,000 bFUSE
     
     // Max Buy & Sell on each transaction
     uint256 public _maxBuyTxAmount = (_totalSupply * 30) / 1000; // 3% 
@@ -347,12 +286,13 @@ contract TESTBFONE is IERC20, Ownable {
     uint256 liqFee; 
     uint256 buybackFee; 
     uint256 mktFee; 
-    uint256[2] devFee;
+    uint256 primDevFee;
+    uint256 secDevFee;
 
     // Total Fee
     uint256 totalFee;
     uint256 feeDenominator = 10000;
-    uint256 public _sellMultiplier = 1; // cant be changed
+    
 
     address autoLiquidityReceiver;
     address secDevFeeReceiver;
@@ -391,8 +331,9 @@ contract TESTBFONE is IERC20, Ownable {
         liqFee = _fees[0]; 
         buybackFee = _fees[1]; 
         mktFee = _fees[2]; 
-        devFee = [_fees[3],_fees[4]];
-        totalFee = liqFee.add(buybackFee).add(mktFee).add(devFee[0]).add(devFee[1]);
+        primDevFee = _fees[3];
+        secDevFee = _fees[4];
+        totalFee = liqFee.add(buybackFee).add(mktFee).add(primDevFee).add(secDevFee);
         
         // Another Initialization
         _allowances[address(this)][address(router)] = type(uint256).max;
@@ -485,13 +426,12 @@ contract TESTBFONE is IERC20, Ownable {
         return !isFeeExempt[sender] && !isFeeExempt[recipient];
     }
 
-    function getTotalFee(bool selling) public view returns (uint256) {
-        if(selling){ return totalFee.mul(_sellMultiplier); }
+    function getTotalFee() public view returns (uint256) {
         return totalFee;
     }
 
     function takeFee(address sender, address receiver, uint256 amount) internal returns (uint256) {
-        uint256 feeAmount = amount.mul(getTotalFee(receiver == pair)).div(feeDenominator);
+        uint256 feeAmount = amount.mul(getTotalFee()).div(feeDenominator);
         uint256 amnestyAmount;
         uint256 finalFeeAmount;
         UserTier memory _userFee;
@@ -516,7 +456,7 @@ contract TESTBFONE is IERC20, Ownable {
         }
 
         if(amnestyAmount >= 0){
-             _totalAmnesty += amnestyAmount; // record total token saved from amnesty
+             _totalAmnesty = _totalAmnesty.add(amnestyAmount); // record total token saved from amnesty
         }
         finalFeeAmount = feeAmount.sub(amnestyAmount); // apply the amnesty into the fee
         
@@ -557,8 +497,8 @@ contract TESTBFONE is IERC20, Ownable {
         uint256 totalBNBFee = totalFee.sub(dynamicLiquidityFee.div(2));
 
         uint256 amountBNBLiquidity = amountBNB.mul(dynamicLiquidityFee).div(totalBNBFee).div(2);
-        uint256 amountBNBDev = amountBNB.mul(devFee[0]).div(totalBNBFee);
-        uint256 amountBNBTeam = amountBNB.mul(devFee[1]).div(totalBNBFee);
+        uint256 amountBNBDev = amountBNB.mul(primDevFee).div(totalBNBFee);
+        uint256 amountBNBTeam = amountBNB.mul(secDevFee).div(totalBNBFee);
         uint256 amountBNBMkt = amountBNB.mul(mktFee).div(totalBNBFee);
         uint256 amountBNBBuyBack = amountBNB.mul(buybackFee).div(totalBNBFee);
         
@@ -613,7 +553,7 @@ contract TESTBFONE is IERC20, Ownable {
             lastTierIndex
         );
         tiers.push(_newTier);
-        lastTierIndex += 1;
+        lastTierIndex = lastTierIndex.add(1);
     }
 
     function modifyTier(
@@ -654,11 +594,11 @@ contract TESTBFONE is IERC20, Ownable {
         _transferFrom(_msgSender(), DEAD, _costToSubscribe); // the cost are burn to dead wallet
         
         // then, we increment
-        _totalBurnFromTier += _costToSubscribe;
+        _totalBurnFromTier = _totalBurnFromTier.add(_costToSubscribe);
         // now check wether the user has been subscribed before or not
         if(!_userTier[_msgSender()].usingTier){
             // means that the user never pay for subscription before
-            _totalSubscriber += 1;
+            _totalSubscriber = _totalSubscriber.add(1);
         }
         _userTier[_msgSender()] = UserTier(
             true,
@@ -669,31 +609,31 @@ contract TESTBFONE is IERC20, Ownable {
     }
     
     function setDevFee(uint256[] memory fee) external onlyOwner {
-        // total fee should not be more than 20%;
+        // total fee should not be more than 10%;
         uint256 simulatedFee = fee[0].add(fee[1]).add(liqFee).add(buybackFee).add(mktFee);
         require(simulatedFee <= 1000, "Fees too high !!");
-        devFee[0] = fee[0];
-        devFee[1] = fee[1];
+        primDevFee = fee[0];
+        secDevFee = fee[1];
         totalFee = simulatedFee;
     }
     function setBuybackFee(uint256 fee) external onlyOwner {
-        // total fee should not be more than 20%;
-        uint256 simulatedFee = fee.add(liqFee).add(devFee[0]).add(devFee[1]).add(mktFee);
+        // total fee should not be more than 10%;
+        uint256 simulatedFee = fee.add(liqFee).add(primDevFee).add(secDevFee).add(mktFee);
         require(simulatedFee <= 1000, "Fees too high !!");
         buybackFee = fee;
         totalFee = simulatedFee;
     }
     function setLpFee(uint256 fee) external onlyOwner {
-        // total fee should not be more than 20%;
-        uint256 simulatedFee = fee.add(devFee[0]).add(buybackFee).add(devFee[1]).add(mktFee);
+        // total fee should not be more than 10%;
+        uint256 simulatedFee = fee.add(primDevFee).add(buybackFee).add(secDevFee).add(mktFee);
         require(simulatedFee <= 1000, "Fees too high !!");
         liqFee = fee;
         totalFee = simulatedFee;
     }
     
     function setMarketingFee(uint256 fee) external onlyOwner {
-        // total fee should not be more than 20%;
-        uint256 simulatedFee = fee.add(devFee[0]).add(buybackFee).add(liqFee).add(devFee[1]);
+        // total fee should not be more than 10%;
+        uint256 simulatedFee = fee.add(primDevFee).add(buybackFee).add(liqFee).add(secDevFee);
         require(simulatedFee < 1000, "Fees too high !!");
         mktFee = fee;
         totalFee = simulatedFee;

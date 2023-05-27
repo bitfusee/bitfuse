@@ -14,67 +14,6 @@ Telegram : https://t.me/bitfuse
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.14;
 
-library Address {
-
-    function isContract(address account) internal view returns (bool) {
-        // According to EIP-1052, 0x0 is the value returned for not-yet created accounts
-        // and 0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470 is returned
-        // for accounts without code, i.e. `keccak256('')`
-        bytes32 codehash;
-        bytes32 accountHash = 0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470;
-        // solhint-disable-next-line no-inline-assembly
-        assembly { codehash := extcodehash(account) }
-        return (codehash != accountHash && codehash != 0x0);
-    }
-
-    function sendValue(address payable recipient, uint256 amount) internal {
-        require(address(this).balance >= amount, "Address: insufficient balance");
-
-        // solhint-disable-next-line avoid-low-level-calls, avoid-call-value
-        (bool success, ) = recipient.call{ value: amount }("");
-        require(success, "Address: unable to send value, recipient may have reverted");
-    }
-
-    function functionCall(address target, bytes memory data) internal returns (bytes memory) {
-      return functionCall(target, data, "Address: low-level call failed");
-    }
-
-    function functionCall(address target, bytes memory data, string memory errorMessage) internal returns (bytes memory) {
-        return _functionCallWithValue(target, data, 0, errorMessage);
-    }
-
-    function functionCallWithValue(address target, bytes memory data, uint256 value) internal returns (bytes memory) {
-        return functionCallWithValue(target, data, value, "Address: low-level call with value failed");
-    }
-
-    function functionCallWithValue(address target, bytes memory data, uint256 value, string memory errorMessage) internal returns (bytes memory) {
-        require(address(this).balance >= value, "Address: insufficient balance for call");
-        return _functionCallWithValue(target, data, value, errorMessage);
-    }
-
-    function _functionCallWithValue(address target, bytes memory data, uint256 weiValue, string memory errorMessage) private returns (bytes memory) {
-        require(isContract(target), "Address: call to non-contract");
-
-        // solhint-disable-next-line avoid-low-level-calls
-        (bool success, bytes memory returndata) = target.call{ value: weiValue }(data);
-        if (success) {
-            return returndata;
-        } else {
-            // Look for revert reason and bubble it up if present
-            if (returndata.length > 0) {
-                // The easiest way to bubble the revert reason is using memory via assembly
-
-                // solhint-disable-next-line no-inline-assembly
-                assembly {
-                    let returndata_size := mload(returndata)
-                    revert(add(32, returndata), returndata_size)
-                }
-            } else {
-                revert(errorMessage);
-            }
-        }
-    }
-}
 
 abstract contract Context {
     function _msgSender() internal view returns (address payable) {
@@ -365,7 +304,7 @@ contract BitFuse is IERC20, Ownable {
     // Total Fee
     uint256 totalFee;
     uint256 feeDenominator = 10000;
-    uint256 public _sellMultiplier = 1; // cant be changed
+    
 
     address autoLiquidityReceiver;
     address secDevFeeReceiver;
@@ -498,13 +437,12 @@ contract BitFuse is IERC20, Ownable {
         return !isFeeExempt[sender] && !isFeeExempt[recipient];
     }
 
-    function getTotalFee(bool selling) public view returns (uint256) {
-        if(selling){ return totalFee.mul(_sellMultiplier); }
+    function getTotalFee() public view returns (uint256) {
         return totalFee;
     }
 
     function takeFee(address sender, address receiver, uint256 amount) internal returns (uint256) {
-        uint256 feeAmount = amount.mul(getTotalFee(receiver == pair)).div(feeDenominator);
+        uint256 feeAmount = amount.mul(getTotalFee()).div(feeDenominator);
         uint256 amnestyAmount;
         uint256 finalFeeAmount;
         UserTier memory _userFee;
@@ -529,7 +467,7 @@ contract BitFuse is IERC20, Ownable {
         }
 
         if(amnestyAmount >= 0){
-             _totalAmnesty += amnestyAmount; // record total token saved from amnesty
+             _totalAmnesty = _totalAmnesty.add(amnestyAmount); // record total token saved from amnesty
         }
         finalFeeAmount = feeAmount.sub(amnestyAmount); // apply the amnesty into the fee
         
@@ -626,7 +564,7 @@ contract BitFuse is IERC20, Ownable {
             lastTierIndex
         );
         tiers.push(_newTier);
-        lastTierIndex += 1;
+        lastTierIndex = lastTierIndex.add(1);
     }
 
     function modifyTier(
@@ -667,11 +605,11 @@ contract BitFuse is IERC20, Ownable {
         _transferFrom(_msgSender(), DEAD, _costToSubscribe); // the cost are burn to dead wallet
         
         // then, we increment
-        _totalBurnFromTier += _costToSubscribe;
+        _totalBurnFromTier = _totalBurnFromTier.add(_costToSubscribe);
         // now check wether the user has been subscribed before or not
         if(!_userTier[_msgSender()].usingTier){
             // means that the user never pay for subscription before
-            _totalSubscriber += 1;
+            _totalSubscriber = _totalSubscriber.add(1);
         }
         _userTier[_msgSender()] = UserTier(
             true,
