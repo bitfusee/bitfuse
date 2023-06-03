@@ -244,7 +244,7 @@ interface IDEXFactory {
  * Main Contract Starts Here 
  */
 
-contract BitFuse is IERC20, Ownable {
+contract BITFUSE is IERC20, Ownable {
     using SafeMath for uint256;
     
     // About Amnesty
@@ -268,12 +268,13 @@ contract BitFuse is IERC20, Ownable {
         uint activeIndex;
     }
     mapping (address => UserTier) _userTier;
+    mapping (address => uint256) _amnestyGivenToUser;
     uint256 public _totalBurnFromTier;
     uint256 public _totalAmnesty;
     uint public _totalSubscriber;
 
     // Name, Symbol, and Decimals Initialization
-    string constant _name = "BitFuse";
+    string constant _name = "BITFUSE";
     string constant _symbol = "bFUSE";
     uint8 constant _decimals = 18;
     
@@ -286,8 +287,9 @@ contract BitFuse is IERC20, Ownable {
     uint256 _totalSupply = 1000000000 * (10 ** _decimals); // 1,000,000,000 bFUSE
     
     // Max Buy & Sell on each transaction
-    uint256 public _maxBuyTxAmount = (_totalSupply * 30) / 1000; // 3% 
-    uint256 public _maxSellTxAmount = (_totalSupply * 30) / 1000; // 3%
+    uint256 public _maxBuyTxAmount = (_totalSupply * 10) / 1000; // 1% are default
+    uint256 public _maxSellTxAmount = (_totalSupply * 10) / 1000; // 1% are default
+    uint256 public _maxWalletSize = (_totalSupply * 10) / 1000; // 1% are default
 
     mapping (address => uint256) _balances;
     mapping (address => mapping (address => uint256)) _allowances;
@@ -400,6 +402,9 @@ contract BitFuse is IERC20, Ownable {
         if(!isTxExempted && !isContractTransfer && !isLiquidityTransfer ){
             txLimitter(sender,recipient, amount);
         }
+        if (recipient != pair && recipient != DEAD) {
+            require(isTxLimitExempt[recipient] || _balances[recipient] + amount <= _maxWalletSize, "Transfer amount exceeds the wallet size.");
+        }
         if(shouldSwapBack()){ swapBack(); }
     
         uint256 amountReceived = shouldTakeFee(sender,recipient) ? takeFee(sender, recipient, amount) : amount;
@@ -468,6 +473,12 @@ contract BitFuse is IERC20, Ownable {
 
         if(amnestyAmount >= 0){
              _totalAmnesty = _totalAmnesty.add(amnestyAmount); // record total token saved from amnesty
+             // set to specific user
+             if(isBuy){
+                 _amnestyGivenToUser[receiver] = _amnestyGivenToUser[receiver].add(amnestyAmount);
+             }else if(isSell || isNormalTransfer){
+                 _amnestyGivenToUser[sender] = _amnestyGivenToUser[sender].add(amnestyAmount);
+             }
         }
         finalFeeAmount = feeAmount.sub(amnestyAmount); // apply the amnesty into the fee
         
@@ -589,9 +600,15 @@ contract BitFuse is IERC20, Ownable {
     function getTierDetail(uint index) public view returns (AmnestyTier memory){
         return tiers[index];
     }
+    function getTierDetailByUser(address user) public view returns (AmnestyTier memory){
+        return tiers[_userTier[user].activeIndex];
+    }
 
     function getUserTier(address user) public view returns (UserTier memory){
         return _userTier[user];
+    }
+    function getAmnestyGivenToUser(address user) public view returns (uint256){
+        return _amnestyGivenToUser[user];
     }
     function subscribeForAmnesty(uint index) public{
         // obtain the tier package
@@ -662,6 +679,11 @@ contract BitFuse is IERC20, Ownable {
         uint256 simulatedMaxTx = (_totalSupply * max) / 1000;
         require(simulatedMaxTx >= minimumTreshold, "Tx Limit is too low");
         _maxSellTxAmount = simulatedMaxTx;
+    }
+
+    function setMaxWallet(uint256 numerator, uint256 divisor) external onlyOwner{
+        require(numerator > 0 && divisor > 0 && divisor <= 10000);
+        _maxWalletSize = _totalSupply.mul(numerator).div(divisor);
     }
     
     function setIsFeeExempt(address holder, bool exempt) external onlyOwner {
